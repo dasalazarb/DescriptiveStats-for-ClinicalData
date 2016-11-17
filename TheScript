@@ -1,0 +1,277 @@
+---
+title: "CIC"
+output: pdf_document
+---
+
+**#Descripcion de variables:**
+
+*##Variables contenidas en archivos: Informe Hospitalizaciones Enero.xlsx y Prestaciones Materiales_test.xlsx*
+
+###Archivo Prestaciones Materiales_test
+
+Este archivo contiene una muestra (10.000 registros) de la poblacion de ENERO, ya que el archivo original contiene mas de 300.000 registros.
+
+```{r, echo=FALSE}
+
+#Paciente: contiene identificador unico por paciente, utilizado para emplear funcion merge(). No usar HC.
+
+#Prestaci?n: corresponde al codigo SAP.
+
+#Denominaci?n: corresponde al medicamento. Pendiente obtener solo el principio activo.
+
+#IS-H: Tipo de una prestaci?n: corresponde a clasificacion booleana MEDICAMENTO POS - MEDICAMENTO NO POS.
+
+#ZISHMED_CONVENIO-ZDESC: corresponde a convenio y contiene informacion de si el medicamento es de alto costo?
+
+#Nom.abr.std.: abreviacion de la columna anterior.
+
+#La demas informacion es omitida, hasta finalizar primer analisis.
+
+
+#Clasificacion de variables:
+
+#Todas las variables anteriores son cualitativas categoricas.
+
+
+```
+
+###Archivo Informe Hospitalizaciones Enero
+
+Descripcion de las columnas relevantes.
+
+```{r, echo=FALSE}
+
+#IPS: comprende las clinicas de COLSUBSIDIO. Solo usar las que dicen 'CLINICA INFANTIL'.
+
+#Paciente: igual que el archivo anterior contiene un identificador unico con el cual se puede usar la funcion merge().
+
+#Fecha Nacimiento: util para convertir la edad en una variable continua.
+
+#Edad: se presenta la edad como una variable discreta.
+
+#Genero: M para masculino y F para femenino. Eliminar los 'ND'.
+
+#Dx. Codigo: contiene los codigos por diagnostico segun CIE10.
+
+#Dx. Descripcion: Descripcion del diagnostico. Util para textmining con 'tm' package.
+
+#UO Medica: Unidad medica. Emplear esta columna porque la comlumna Unidad Medica no tiene informacion completa.
+
+#___________________________________________________________
+
+#Las ultimas columnas corresponden a tiempos de entrada, salida y permanencia en CIC.
+
+#Fecha Hospitalizacion: formato DD/MM/YYYY.
+
+#Fecha Alta:formato DD/MM/YYYY.
+
+#Dias Hosp: dias en piso.
+
+#Dias Intermedio: dias en intermedio.
+
+#Dias Intensivos: dias en UCI.
+
+#Cantidad: Total de dias, comparar las fechas (Alta - Hosp).
+
+
+#Variables cualitativas categoricas:
+
+#IPS - Paciente - Genero - Dx. Codigo - Dx. Descripcion - UO Medica
+
+#Variables cuantittivas:
+#Discretas:
+#Edad - Dias Hosp - Dias Intermedio - Dias Intensivos - Dias Hospital - Fecha (Alta Hospitalizacion)
+
+#continuas:
+#Fecha Nacimiento
+
+```
+
+*#Fusi?n de los archivos*
+
+Antes de definir cualquier analasis se unen los dos archivo?+'s, para reduccion y facilidad en la limpieza.
+
+
+```{r, echo=FALSE}
+setwd('C:/Users/Diego Salazar/Google Drive/Project_CIC')
+getwd()
+list.dirs(getwd()) #enlista directorios
+list.files(getwd()) #enlista archivos
+
+#Lectura de archivo informe hosp por mes, requiere de gdata para abrir archivo .xlsx
+
+#info1 <- Informe Hospitalizaciones Enero.xlsx
+#info2 <- Prestaciones Materiales_test2.xlsx
+#info3 <- CIE10.xls con clasificacion por grupo
+#info4 <- C?digos ATC - CAT?LOGO 10 - 04042016.xlsx
+
+require(gdata)
+info1 <- read.xls("Informe Hospitalizaciones Enero.xlsx", sheet = 1, header = TRUE) #Queda almacenad como un data.frame
+
+info2 <- read.xls('Prestaciones Materiales_test.xlsx', sheet = 1, header = TRUE) #Queda almacenado como un data.frame
+
+info3 <- read.xls('CIE10.xls', sheet = 1, header = TRUE) # Almacenado como data.frame
+
+info4 <- read.xls('Codigos ATC - CATALOGO 10 - 04042016.xlsx', sheet = 1, header = TRUE) # Almacenado como data.frame
+
+#Recomendacion cambiar algunos nombres de titulos de los archivos:
+#info1:
+names(info1)
+colnames(info1)[colnames(info1) == "Dx..Codigo"] <- "Dx_Codigo"
+colnames(info1)[colnames(info1) == "Dx..Descripcion"] <- "Dx_Descripcion"
+names(info1)
+
+#info2:
+names(info2)
+colnames(info2)[colnames(info2) == "IS.H..Tipo.de.una.prestacion"] <- "IS.H_Tipo.de.una.prestacion"
+colnames(info2)[colnames(info2) == "Denominaci0n"] <- "Denominacion"
+colnames(info2)[colnames(info2) == "Prestación"] <- "Prestacion"
+names(info2)
+
+#Algunas pruebas para los datos:
+summary(info1) ; summary(info2) ; summary(info3)
+
+#Fusion de archivos, usando f(x) merge():
+cic <- merge(x=info1[, c("IPS", "Paciente", "Fecha.Nacimiento", "Edad", "Genero", "Dx_Codigo", "Dx_Descripcion", "Unidad.Medica", "Fecha.Hospitalizacion", "Fecha.Alta", "Dias.Hosp", "Dias.Intermedio", "Dias.Intensivos", "Dias.Hospital")], y=info2[, c("Paciente", "Prestacion", "Denominacion", "IS.H_Tipo.de.una.prestacion", "ZISHMED_CONVENIO.ZDESC", "Nom.abr.std.")], by="Paciente")
+cic <- merge(x=cic, y=info3[, c("Dx_Codigo", "Descripcion", "Clase")], by="Dx_Codigo")
+cic <- merge(x=cic, y=info4[, c("Prestacion", "ATC", "Grupo.Farmacologico")], by="Prestacion")
+cic <- subset(cic, cic$IPS == "CLINICA INFANTIL") #Se filtra la informacion por "CLINICA INFANTIL".
+cic <- subset(cic, cic$Dx_Codigo != "")
+cic <- unique(cic)
+names(cic)
+summary(cic)
+View(cic)
+edit(cic)
+
+#Informacion para hacer grafo: denominacion (medicamento) vs. Dx_Codigo.
+graf <- subset(unique(data.frame(cic$ATC[cic$Dx_Codigo != ""], cic$Dx_Codigo[cic$Dx_Codigo != ""])))
+graf <- unique(graf)
+View(graf)
+write.csv(graf, file = "Treat_Dx.csv")
+#newGraf <- subset(graf, subset = (grepl('C+', graf$testVar.xlsfile.Dx..Codigo) == TRUE))
+
+```
+
+**#Estadistica descriptiva**
+
+*#Estadistica descriptiva univariable*
+
+```{r, echo=FALSE}
+#Estadisticas descriptivas para variables cualitativas
+
+#Libreria xda para analisis estadistico del grupo
+library(devtools)
+library(e1071)
+library(dplyr)
+library(ggplot2)
+library(ggvis)
+#install_github("ujjwalkarn/xda")
+library(xda)
+library(plotly)
+numSummary(cic)
+charSummary(cic)
+#Plot(cic, "")
+
+#Frecuencias absolutas
+#str(cic)
+
+edad <- table(cic$Edad)[table(cic$Edad)!=0] #var cuant continua
+gen <- table(cic$Genero)[table(cic$Genero)!=0] #var cualitativa 
+dx <- table(cic$Dx_Codigo)[table(cic$Dx_Codigo)!=0] #var cualitativa
+serv <- table(cic$UO.Medica)[table(cic$UO.Medica)!=0] #var cualitativa
+drug <- table(cic$Denominacion)[table(cic$Denominacion)!=0] #var cualitativa
+
+#Las frecuencias relativas la obtenemos a partir de dividir cada variable anterior por el conteo del total [ 1. dim.datos <- dim(cic) y 2. n.ind <- dim.datos[1]]
+dim.datos <- dim(cic)
+n.ind <- dim.datos[1]
+frec_edad <- edad/n.ind
+frec_gen <- gen/n.ind
+fec_dx <- dx/n.ind
+frec_serv <- serv/n.ind
+frec_drug <- drug/n.ind
+
+#graficos de la estadistica descriptiva
+#Genero
+
+dcic <- tbl_df(cic)
+
+dcic %>%
+  distinct(Genero, Paciente) %>% 
+  group_by(Genero) %>%
+  summarise(conteo = n()) %>%
+  with(barplot(conteo, names.arg = Genero, ylab='Frecuencias absolutas', main ='Diagrama barrras Genero', cex.axis=0.5, cex.names=0.9, beside=TRUE,  col = heat.colors(max(conteo)))) #legend.text = Genero,
+
+#text(x=gen, y=conteo, labels = as.character(gen), pos = 1, cex = 0.8, col = 'red')
+
+#Conteo de edad
+dcic %>%
+  distinct(Genero, Paciente) %>% 
+  group_by(Genero) %>%
+  summarise(conteoGenero = n())
+
+#Edad
+#now <- Sys.time()
+#now <- strptime(now, "%Y-%m-%d %H:%M:%S")
+dcic %>% 
+  select(Fecha.Nacimiento, Fecha.Hospitalizacion, Genero) %>%
+  mutate(ye = format(as.Date(Fecha.Hospitalizacion, "%d/%m/%Y"), "%Y")) %>%
+  filter(ye != "2015") %>%
+  distinct(Fecha.Nacimiento, Fecha.Hospitalizacion, Genero) %>%
+  mutate(Fecha_hosp = as.Date(Fecha.Hospitalizacion, "%d/%m/%Y"), Fecha_nac = as.Date(Fecha.Nacimiento, "%d/%m/%Y"),  edad_continua = round(Fecha_hosp - Fecha_nac)/365, digits = 2) %>%
+  filter(edad_continua < 20 ) %>%
+  ggplot(aes(edad_continua, fill = Genero)) + geom_histogram() + xlim(0, 20) + scale_x_continuous(breaks = c(0:20)) + scale_y_continuous(breaks = c(0:20))
+
+#Conteo por genero de edades.
+dcic %>% 
+  select(Edad, Genero) %>%
+  distinct(Edad, Genero) %>% 
+  group_by(Genero) %>%
+  summarise(conteoGenero = n())
+
+#histograma segun edad
+#histo <- hist(edad_continua, freq = FALSE, main = "Diagrama de densidad por edad", col = heat.colors(max(as.numeric(edad_continua))), ylim=c(0,0.15), axes=F, labels=TRUE) #axes=F para quitar los ejes. axis(2) para mostrar eje y. El resto para cuadrar eje x.
+#axis(2)
+#axis(side=1, at=seq(0,26,1), labels = seq(0,26,1))
+#lines(density(edad))
+
+#distribucion de pacientes por fecha de nacimiento
+#en formato tambien se pude poner %d %b %y
+dcic %>%
+  select(Fecha.Nacimiento, Genero) %>%
+  distinct(Fecha.Nacimiento, Genero) %>%
+  mutate(ano_nac = as.numeric(format(as.Date(Fecha.Nacimiento, "%d/%m/%Y"), "%Y"))) %>%
+  filter(ano_nac > 1990) %>%
+  ggplot(aes(ano_nac, fill = Genero)) + geom_histogram() + xlim(1990, 2015) + scale_x_continuous(breaks = c(1990:2015)) + coord_flip()
+#hist(as.Date(cic$Fecha.Nacimiento, format="%d/%m/%Y"), "months", format = "%y", main = "Distribucion por fechas de nacimiento")
+#plot(histo$counts, log = "xy") revisar para hacer log-normal distribution
+
+#Diagnostico
+dcicly <- dcic  %>% 
+  select(Dx_Codigo, Paciente) %>%
+  distinct(Dx_Codigo, Paciente) %>%
+  group_by(Dx_Codigo) %>%
+  summarise(n = n()) %>%
+  mutate(clase_cie10 = substr(Dx_Codigo, 1, 1)) %>%
+  ggplot(aes(n, Dx_Codigo, color = clase_cie10)) + geom_jitter(stat="identity") + facet_grid(clase_cie10~. , scales = "free", space = "free") 
+  
+dcicly + scale_x_continuous(breaks = c(0:14)) + coord_cartesian(xlim = c(0:14))
+
+#Servicio
+serv_labels <- paste(round(serv/sum(serv)*100, 1), "%", sep = " ")
+with(cic, pie(serv, main = "Pacientes en cada servicio", col = rainbow(6), labels = serv_labels, cex = 0.8))
+legend(0.5, names(serv), cex = 0.8, fill=rainbow(6))
+
+#Dias hospitalizados
+fecha_entrada <- as.Date(cic$Fecha.Hospitalizacion, "%d/%m/%Y")
+fecha_alta <- as.Date(cic$Fecha.Alta, "%d/%m/%Y")
+hosp_discreta <- as.integer(round((fecha_alta-fecha_entrada),1))
+hist(hosp_discreta[!is.na(hosp_discreta)], freq = FALSE, main = "Diagrama de densidad por dias hosp", xlab="No. dias hospitalizados")
+
+#drugs
+pintar_med <- data.frame(w=table(cic$ATC)[table(cic$ATC) != 0])
+dotchart(as.numeric(pintar_med[,1]), labels = names(pintar_med[,1]), cex = 0.5, pch = 21) #puntos
+
+#http://www.harding.edu/fmccown/r/
+#https://sakai.duke.edu/access/content/group/7a48cfac-b05c-4291-8e13-0091b5cd1479/Reference/BaseGraphics.html
+
+```
